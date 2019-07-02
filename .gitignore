@@ -1,0 +1,6 @@
+# 
+*.out
+
+corpus/
+processed_corpus/
+data/
