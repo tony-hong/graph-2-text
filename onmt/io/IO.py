@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import re
 from collections import Counter, defaultdict, OrderedDict
 from itertools import count
 import torch.autograd as autograd
@@ -138,9 +139,26 @@ def make_features(batch, side, data_type='text'):
         data = batch.__dict__[side]
 
     feat_start = side + "_feat_"
-    keys = sorted([k for k in batch.__dict__ if feat_start in k])
+    
+    # BUGGY
+    #keys = sorted([k for k in batch.__dict__ if feat_start in k])
+    
+    key_tuple_list = []
+    for k in batch.__dict__:
+        if feat_start in k: 
+            feat_idx_str = re.findall(r'_feat_(.*)', k)[-1]
+            feat_idx = int(feat_idx_str)
+            key_tuple_list.append((feat_idx, k))
+    sorted_key_tuple_list = sorted(key_tuple_list, key=lambda x : x[0])
+    keys = [item[1] for item in sorted_key_tuple_list]
+    
+    #print ('keys', keys)
+    
     features = [batch.__dict__[k] for k in keys]
     levels = [data] + features
+
+    #print ('features', len(features))
+    #print ('levels', len(levels))
 
     if data_type == 'text':
         return torch.cat([level.unsqueeze(2) for level in levels], 2)
@@ -193,7 +211,8 @@ def get_adj(batch):
 
     _MAX_BATCH_LEN = batch.src[0].data.size()[0]   # data is [ seqLen x batch_size ]
 
-    _MAX_DEGREE = 10  # If the average degree is much higher than this, it must be changed.
+    # !!! If the average degree is much higher than this, it must be changed.
+    _MAX_DEGREE = 10
 
     sent_mask = torch.lt(torch.eq(batch.src[0].data, 1), 1)
 
@@ -209,18 +228,31 @@ def get_adj(batch):
 
     tmp_in = {}
     tmp_out = {}
-
-    for d, de in enumerate(node1_index):  # iterates over the batch
+    skip_labels = []
+    num_skip_labels = 0 
+    
+    # iterates over the batch
+    print('batch size: ', len(node1_index))
+    for d, de in enumerate(node1_index):
+        skip_label = False
         for a, arc in enumerate(de):
 
             arc_0 = label_voc[label_index[d, a]]
 
-            if arc_0 == '<unk>' or arc_0 == '<pad>':
+            arc_1_raw = node1_voc[arc]
+            arc_2_raw = node2_voc[node2_index[d, a]]
+
+            if arc_0 == '<unk>' or arc_0 == '<pad>' or arc_1_raw == '<pad>' or arc_2_raw == '<pad>': 
+#             if arc_0 == '<unk>' or arc_0 == '<pad>': 
+                if arc_0 != '<pad>' and arc_1_raw == '<pad>':
+                    skip_labels.append((d, a, arc_0, arc_1_raw, arc_2_raw))
+                    num_skip_labels = num_skip_labels + 1
+                    skip_label = True
+                #    print('broken: ', d, a, arc_0, arc_1_raw, arc_2_raw)
                 pass
             else:
-
-                arc_1 = int(node1_voc[arc])
-                arc_2 = int(node2_voc[node2_index[d, a]])
+                arc_1 = int(arc_1_raw)
+                arc_2 = int(arc_2_raw)
 
                 if arc_1 in tmp_in:
                     tmp_in[arc_1] += 1
@@ -250,7 +282,14 @@ def get_adj(batch):
 
         tmp_in = {}
         tmp_out = {}
-
+        
+    if skip_label:
+#         print('skip_batch', skip_labels)
+        print('num_skip_batch', num_skip_labels)
+#         print (label_index)
+#         print (node1_index)
+        skip_label = False
+            
     adj_arc_in = autograd.Variable(torch.LongTensor(np.transpose(adj_arc_in).tolist()))
     adj_arc_out = autograd.Variable(torch.LongTensor(np.transpose(adj_arc_out).tolist()))
 
@@ -270,6 +309,8 @@ def get_adj(batch):
         mask_out = mask_out.cuda()
         mask_loop = mask_loop.cuda()
         sent_mask = sent_mask.cuda()
+        
+    
     return adj_arc_in, adj_arc_out, adj_lab_in, adj_lab_out, mask_in, mask_out, mask_loop, sent_mask
 
 
