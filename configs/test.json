@@ -1,0 +1,9 @@
+{
+    "version": 1.0,
+    "data": "data/SR19_T2_GCN_fr_partut/SR19_T2_GCN_fr_partut",
+    "save_model": "save/test_new_loss/test_new_loss",
+    "layers": "2",
+    "epoch": "20",
+    "gcn_num_labels": 19,
+    "gpuid": "-1"
+}

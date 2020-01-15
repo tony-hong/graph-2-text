@@ -1,0 +1,9 @@
+{
+    "version": 1.0,
+    "data": "data/SR19_T2_GCN_en_all/SR19_T2_GCN_en_all",
+    "save_model": "save/replace2POS/SR19_T2_en_all_4L",
+    "decoder_layers": "2",
+    "epoch": "20",
+    "gcn_num_labels": 19,
+    "gpuid": "2"
+}

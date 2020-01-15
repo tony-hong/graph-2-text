@@ -1,0 +1,11 @@
+{
+    "version": 1.0,
+    "model_path": "SR19_T2_en_all_4L/SR19_T2_en_all_4L_acc_54.92_ppl_13.80_e13.pt",
+    "sys_path": "SR19_T2_en_all_4L.txt",
+    "ref_path": "gold/T2-dev_en_ewt-ud-dev_DEEP.output.dat",
+    "gpu": -1, 
+    "data_part": "dev", 
+    "corpus": "en_ewt", 
+    "max_length": 5, 
+    "block_ngram_repeat": 3
+}

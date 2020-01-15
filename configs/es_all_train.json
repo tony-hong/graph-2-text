@@ -1,0 +1,8 @@
+{
+    "version": 1.0,
+    "data": "data/SR19_T2_GCN_es_all/SR19_T2_GCN_es_all",
+    "save_model": "save/SR19_T2_es_all_4L/SR19_T2_es_all_4L",
+    "decoder_layers": "2",
+    "epoch": "30",
+    "gpuid": "1"
+}
