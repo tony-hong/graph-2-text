@@ -10,11 +10,11 @@ def model_opts(parser):
 
     # Embedding Options
     group = parser.add_argument_group('Model-Embeddings')
-    group.add_argument('-src_word_vec_size', type=int, default=500,
+    group.add_argument('-src_word_vec_size', type=int, default=512,
                        help='Word embedding size for src.')
-    group.add_argument('-tgt_word_vec_size', type=int, default=500,
+    group.add_argument('-tgt_word_vec_size', type=int, default=512,
                        help='Word embedding size for tgt.')
-    group.add_argument('-word_vec_size', type=int, default=-1,
+    group.add_argument('-word_vec_size', type=int, default=512,
                        help='Word embedding size for src and tgt.')
 
     group.add_argument('-morph_vec_size', type=int, default=500,
@@ -70,7 +70,7 @@ def model_opts(parser):
                        help='Number of layers in the encoder')
     group.add_argument('-dec_layers', type=int, default=2,
                        help='Number of layers in the decoder')
-    group.add_argument('-rnn_size', type=int, default=500,
+    group.add_argument('-rnn_size', type=int, default=512,
                        help='Size of rnn hidden states')
     group.add_argument('-cnn_kernel_width', type=int, default=3,
                        help="""Size of windows in the cnn, the kernel_size is
@@ -197,7 +197,7 @@ def preprocess_opts(parser):
     group.add_argument('-src_seq_length', type=int, default=50,
                        help="Maximum source sequence length")
     group.add_argument('-src_seq_length_trunc', type=int, default=0,
-                       help="Truncate source sequence length.")
+                       help="Truncate source sequence length. 0 for unlimited.")
     group.add_argument('-tgt_seq_length', type=int, default=50,
                        help="Maximum target sequence length to keep.")
     group.add_argument('-tgt_seq_length_trunc', type=int, default=0,
@@ -229,9 +229,9 @@ def preprocess_opts(parser):
 def gcn_opts(parser):
     group = parser.add_argument_group('General')
 
-    group.add_argument('-gcn_num_inputs', type=int, default=500,
+    group.add_argument('-gcn_num_inputs', type=int, default=512,
                        help='Input size for the gcn layer')
-    group.add_argument('-gcn_num_units', type=int, default=500,
+    group.add_argument('-gcn_num_units', type=int, default=512,
                        help='Output size for the gcn layer')
     group.add_argument('-gcn_num_labels', type=int, default=5,
                        help='Number of labels for the edges of the gcn layer')
@@ -243,14 +243,16 @@ def gcn_opts(parser):
                        help='Use outgoing edges of the gcn layer')
     group.add_argument('-gcn_batch_first', action="store_true",
                        help='Batchfirst for the gcn layer')
-    group.add_argument('-gcn_residual', type=str, default="",
+    group.add_argument('-gcn_residual', type=str, default="residual",
                        choices=['residual', 'dense'],
                        help='Ddcide wich skip connection to use between GCN layers')
     group.add_argument('-gcn_use_gates', action="store_true",
                        help='Switch to activate edgewise gates')
     group.add_argument('-gcn_use_glus', action="store_true",
                        help='Node gates.')
-
+    group.add_argument('-gcn_type', default='GCN',
+                       choices=['GCN', 'RGCN', 'FTGCN', 'GAT', 'SurfGCN'],
+                       help='choose different types of GCN.')
 
 def train_opts(parser):
     # Model loading/saving options
@@ -329,6 +331,9 @@ def train_opts(parser):
                         uses more memory.""")
     group.add_argument('-epochs', type=int, default=13,
                        help='Number of training epochs')
+    group.add_argument('-early_stopping', action="store_true",
+                   help='Early stop when train acc > valid acc.')
+    
     group.add_argument('-optim', default='sgd',
                        choices=['sgd', 'adagrad', 'adadelta', 'adam',
                                 'sparseadam'],
@@ -405,7 +410,7 @@ def train_opts(parser):
                        help="""Use tensorboardX for visualization during training.
                        Must have the library tensorboardX.""")
     group.add_argument("-tensorboard_log_dir", type=str,
-                       default="runs/onmt",
+                       default="save/tensorboardX/en_noFeat_RGCN",
                        help="""Log directory for Tensorboard.
                        This is also the name of the run.
                        """)
@@ -484,6 +489,15 @@ def translate_opts(parser):
                         (higher = longer generation)""")
     group.add_argument('-beta', type=float, default=-0.,
                        help="""Coverage penalty parameter""")
+    
+    group.add_argument('--block_ngram_repeat', '-block_ngram_repeat',
+              type=int, default=1,
+              help='Block repetition of ngrams during decoding.')
+    group.add_argument('--ignore_when_blocking', '-ignore_when_blocking',
+              nargs='+', type=str, default=[],
+              help="Ignore these strings when blocking repeats. "
+                   "You want to block sentence delimiters.")
+    
     group.add_argument('-replace_unk', action="store_true",
                        help="""Replace the generated UNK tokens with the
                        source token that had highest attention weight. If
