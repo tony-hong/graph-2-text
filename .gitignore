@@ -1,6 +1,13 @@
 # 
 *.out
+*.swp
 
 corpus/
 processed_corpus/
 data/
+save/
+gold/
+outputs/
+submission/
+code_backup/
+SR19_submission/
