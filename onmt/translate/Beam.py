@@ -11,16 +11,30 @@ class Beam(object):
 
     Args:
        size (int): beam size
-       pad, bos, eos (int): indices of padding, beginning, and ending.
-       n_best (int): nbest size to use
+       pad, bos, eos (int): indices of padding, beginning, and ending. Magic intergers. 
+       n_best (int): nbest size to use. Don't stop until at least this many beams have
+            reached EOS.
        cuda (bool): use gpu
-       global_scorer (:obj:`GlobalScorer`)
+       global_scorer (:obj:`GlobalScorer`).  
+            (onmt.translate.GNMTGlobalScorer): Scorer instance.
+        min_length (int): Shortest acceptable generation, not counting
+            begin-of-sentence or end-of-sentence.
+        stepwise_penalty (bool): Apply coverage penalty at every step.
+        
+        # from the newest version (12 Aug 2019, master, eaade1d):        
+        block_ngram_repeat (int): Block beams where
+            ``block_ngram_repeat``-grams repeat.
+        exclusion_tokens (set[int]): If a gram contains any of these
+            token indices, it may repeat. 
+       
     """
     def __init__(self, size, pad, bos, eos,
                  n_best=1, cuda=False,
                  global_scorer=None,
                  min_length=0,
-                 stepwise_penalty=False):
+                 stepwise_penalty=False,
+                 block_ngram_repeat=0,  
+                exclusion_tokens=set([])):
 
         self.size = size
         self.tt = torch.cuda if cuda else torch
@@ -57,7 +71,11 @@ class Beam(object):
 
         # Apply Penalty at every step
         self.stepwise_penalty = stepwise_penalty
-
+        
+        self.block_ngram_repeat = block_ngram_repeat
+        self.exclusion_tokens = exclusion_tokens
+        
+        
     def get_current_state(self):
         "Get the outputs for the current timestep."
         return self.next_ys[-1]
@@ -81,11 +99,13 @@ class Beam(object):
         num_words = word_probs.size(1)
         if self.stepwise_penalty:
             self.global_scorer.update_score(self, attn_out)
+            
         # force the output to be longer than self.min_length
         cur_len = len(self.next_ys)
         if cur_len < self.min_length:
             for k in range(len(word_probs)):
                 word_probs[k][self._eos] = -1e20
+                
         # Sum the previous scores.
         if len(self.prev_ks) > 0:
             beam_scores = word_probs + \
@@ -94,6 +114,29 @@ class Beam(object):
             for i in range(self.next_ys[-1].size(0)):
                 if self.next_ys[-1][i] == self._eos:
                     beam_scores[i] = -1e20
+
+            # add Block ngram repeats here
+            if self.block_ngram_repeat > 0:
+                le = len(self.next_ys)
+                for j in range(self.next_ys[-1].size(0)):
+                    hyp, _ = self.get_hyp(le - 1, j)
+                    ngrams = set()
+                    fail = False
+                    gram = []
+                    #print (hyp)
+                    for i in range(le - 1):
+                        # Last n tokens, n = block_ngram_repeat
+                        gram = (gram +
+                                [hyp[i]])[-self.block_ngram_repeat:]
+                        # Skip the blocking if it is in the exclusion list
+                        if set(gram) & self.exclusion_tokens:
+                            continue
+                        if tuple(gram) in ngrams:
+                            fail = True
+                        ngrams.add(tuple(gram))
+                    if fail:
+                        beam_scores[j] = -1e20
+                        
         else:
             beam_scores = word_probs[0]
         flat_beam_scores = beam_scores.view(-1)
@@ -121,6 +164,7 @@ class Beam(object):
         if self.next_ys[-1][0] == self._eos:
             self.all_scores.append(self.scores)
             self.eos_top = True
+                    
 
     def done(self):
         return self.eos_top and len(self.finished) >= self.n_best

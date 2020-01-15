@@ -97,7 +97,7 @@ class Embeddings(nn.Module):
                  sparse=False):
 
         self.word_padding_idx = word_padding_idx
-
+        
         # Dimensions and padding for constructing the word embedding matrix
         vocab_sizes = [word_vocab_size]
         emb_dims = [word_vec_size]
@@ -129,7 +129,10 @@ class Embeddings(nn.Module):
         # how big your embeddings are going to be.
         self.embedding_size = (sum(emb_dims) if feat_merge == 'concat'
                                else word_vec_size)
-
+        
+        print ('feat_merge', feat_merge)
+        print ('self.embedding_size', self.embedding_size)
+        
         # The sequence of operations that converts the input sequence
         # into a sequence of embeddings. At minimum this consists of
         # looking up the embeddings for each word and feature in the
@@ -149,6 +152,13 @@ class Embeddings(nn.Module):
             pe = PositionalEncoding(dropout, self.embedding_size)
             self.make_embedding.add_module('pe', pe)
 
+        # add dropout for embeddings
+        if dropout != 0:
+            # add dropout for embedding
+            dropout = nn.Dropout(p=0.5)
+            self.make_embedding.add_module('dropout', dropout)
+            
+        
     @property
     def word_lut(self):
         return self.make_embedding[0][0]
@@ -181,7 +191,7 @@ class Embeddings(nn.Module):
         """
         in_length, in_batch, nfeat = input.size()
         aeq(nfeat, len(self.emb_luts))
-
+        
         emb = self.make_embedding(input)
 
         out_length, out_batch, emb_size = emb.size()

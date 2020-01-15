@@ -9,6 +9,8 @@ from torch.nn.utils.rnn import pad_packed_sequence as unpack
 import onmt
 from onmt.Utils import aeq
 from onmt.my_modules.GCN import GCNLayer
+from onmt.my_modules.RGCN import RGCNLayer
+from onmt.my_modules.FTGCN import FTGCNLayer
 
 def rnn_factory(rnn_type, **kwargs):
     # Use pytorch version when available.
@@ -190,7 +192,7 @@ class RNNEncoder(EncoderBase):
 
 
 class GCNEncoder(EncoderBase):
-    """ A generic recurrent neural network encoder.
+    """ A generic GCN encoder.
 
     Args:
        rnn_type (:obj:`str`):
@@ -211,7 +213,9 @@ class GCNEncoder(EncoderBase):
                  residual='',
                  use_gates=True,
                  use_glus=False,
-                 morph_embeddings=None):
+                 gcn_type='GCN',
+                 morph_embeddings=None,
+                dropout=0.5):
         super(GCNEncoder, self).__init__()
         self.embeddings = embeddings
         self.num_layers = num_layers
@@ -220,8 +224,17 @@ class GCNEncoder(EncoderBase):
         self.residual = residual
         self.use_gates = use_gates
         self.use_glus = use_glus
-
-
+        
+        if gcn_type == 'GCN': 
+            Layer = GCNLayer
+        elif gcn_type == 'RGCN': 
+            Layer = RGCNLayer
+        elif gcn_type == 'FTGCN': 
+            Layer = FTGCNLayer
+        else:
+            print ('Unknown model. Fall back to GCN. ')
+            Layer = GCNLayer
+            
         if morph_embeddings is not None:
             self.morph_embeddings = morph_embeddings
             self.emb_morph_emb = nn.Linear(num_inputs+morph_embeddings.embedding_size, num_inputs)
@@ -239,7 +252,7 @@ class GCNEncoder(EncoderBase):
         if residual == '' or residual == 'residual':
 
             for i in range(self.num_layers):
-                gcn = GCNLayer(num_inputs, num_units, num_labels,
+                gcn = Layer(num_inputs, num_units, num_labels,
                                in_arcs=in_arcs, out_arcs=out_arcs, use_gates=self.use_gates,
                                use_glus=self.use_glus)
                 self.gcn_layers.append(gcn)
@@ -249,16 +262,15 @@ class GCNEncoder(EncoderBase):
         elif residual == 'dense':
             for i in range(self.num_layers):
                 input_size = num_inputs + (i * num_units)
-                gcn = GCNLayer(input_size, num_units, num_labels,
+                gcn = Layer(input_size, num_units, num_labels,
                                in_arcs=in_arcs, out_arcs=out_arcs, use_gates=self.use_gates,
                                use_glus=self.use_glus)
                 self.gcn_layers.append(gcn)
 
             self.gcn_seq = nn.Sequential(*self.gcn_layers)
 
-
-
-
+        # add dropout for GCN
+        self.dropout = nn.Dropout(p=dropout)
 
 
     def forward(self, src, lengths=None, arc_tensor_in=None, arc_tensor_out=None,
@@ -362,6 +374,10 @@ class GCNEncoder(EncoderBase):
         h__1 = torch.cat([h_1, h_2], dim=0)  # [2, b, h]
         h__2 = torch.cat([h_3, h_4], dim=0)  # [2, b, h]
 
+        # add dropout here
+        h__1 = self.dropout(h__1)
+        h__2 = self.dropout(h__2)
+        
         return (h__1, h__2), memory_bank
 
 
@@ -812,7 +828,7 @@ class NMTModelGCN(nn.Module):
                  * dictionary attention dists of `[tgt_len x batch x src_len]`
                  * final decoder state
         """
-        tgt = tgt[:-1]  # exclude last target from inputs
+        tgt = tgt[:-1]  # exclude last target from inputs. TH: #edge == #node - 1
 
         enc_final, memory_bank = self.encoder(src, lengths, adj_arc_in, adj_arc_out,
                                               adj_lab_in, adj_lab_out,
@@ -826,6 +842,7 @@ class NMTModelGCN(nn.Module):
                          memory_lengths=lengths)
         if self.multigpu:
             # Not yet supported on multi-gpu
+            print ("Not yet supported on multi-gpu!!!")
             dec_state = None
             attns = None
         return decoder_outputs, attns, dec_state

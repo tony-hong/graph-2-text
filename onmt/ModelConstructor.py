@@ -117,6 +117,7 @@ def make_encoder(opt, embeddings, morph_embeddings=None):
                           opt.gcn_residual,
                           opt.gcn_use_gates,
                           opt.gcn_use_glus,
+                          opt.gcn_type, 
                           morph_embeddings)
     else:
         # "rnn" or "brnn"
@@ -201,6 +202,9 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
         feature_dicts = onmt.io.collect_feature_vocabs(fields, 'src')
         src_embeddings = make_embeddings(model_opt, src_dict,
                                          feature_dicts)
+
+        print('feature_dicts', len(feature_dicts))
+        
         if 'morph' in fields:
             if hasattr(fields["morph"], 'vocab'):
                 morph_dict = fields["morph"].vocab
