@@ -5,8 +5,15 @@ Laura Perez
 This class knows the structure of the server output (given by corenlp.py)
 """
 
+import os
+import sys
+
+SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.join(SRC_DIR, 'utils/'))
+
 import jsonrpc
 import json
+
 
 class CoreNLPService:
     server = None #Instance of Standford CoreNLP server

@@ -4,6 +4,7 @@ from __future__ import division, unicode_literals
 import os
 import argparse
 import math
+import numpy as np
 import codecs
 import torch
 
@@ -26,9 +27,13 @@ opt = parser.parse_args()
 
 
 def _report_score(name, score_total, words_total):
-    print("%s AVG SCORE: %.4f, %s PPL: %.4f" % (
-        name, score_total / words_total,
-        name, math.exp(-score_total / words_total)))
+    print(score_total)
+    print(words_total)
+    print("%s AVG SCORE: %.4f, " % (
+        name, score_total / words_total))
+#     print("%s AVG SCORE: %.4f, %s PPL: %.4f" % (
+#         name, score_total / words_total,
+#         name, np.exp(-score_total / words_total)))
 
 
 def _report_bleu():
@@ -110,10 +115,14 @@ def main():
         global_scorer=scorer,
         max_length=opt.max_length,
         copy_attn=model_opt.copy_attn,
+#         a hack here to enforce copy attn
+#         copy_attn=True,
         cuda=opt.cuda,
         beam_trace=opt.dump_beam != "",
         min_length=opt.min_length,
-        stepwise_penalty=opt.stepwise_penalty)
+        stepwise_penalty=opt.stepwise_penalty,
+        block_ngram_repeat=opt.block_ngram_repeat,
+        ignore_when_blocking=set(opt.ignore_when_blocking))
     builder = onmt.translate.TranslationBuilder(
         data, translator.fields,
         opt.n_best, opt.replace_unk, opt.tgt)

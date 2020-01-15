@@ -264,6 +264,8 @@ def train_model(model, fields, optim, data_type, model_opt):
         print('Validation perplexity: %g' % valid_stats.ppl())
         print('Validation accuracy: %g' % valid_stats.accuracy())
 
+        #TODO: can run the translate here
+        
         # 3. Log to remote server.
         if opt.exp_host:
             train_stats.log("train", experiment, optim.lr)
@@ -278,6 +280,12 @@ def train_model(model, fields, optim, data_type, model_opt):
         # 5. Drop a checkpoint if needed.
         if epoch >= opt.start_checkpoint_at:
             trainer.drop_checkpoint(model_opt, epoch, fields, valid_stats)
+        
+        # early stopping checkpoint 
+        if opt.early_stopping and train_stats.accuracy() - valid_stats.accuracy() > 0: 
+            trainer.drop_checkpoint(model_opt, epoch, fields, valid_stats)
+            print('Early stopping at ep', epoch)
+            break 
 
 
 def check_save_model_path():
