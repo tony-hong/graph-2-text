@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import re
 from collections import Counter, defaultdict, OrderedDict
 from itertools import count
 import torch.autograd as autograd
@@ -138,9 +139,26 @@ def make_features(batch, side, data_type='text'):
         data = batch.__dict__[side]
 
     feat_start = side + "_feat_"
-    keys = sorted([k for k in batch.__dict__ if feat_start in k])
+    
+    # BUGGY
+    #keys = sorted([k for k in batch.__dict__ if feat_start in k])
+    
+    key_tuple_list = []
+    for k in batch.__dict__:
+        if feat_start in k: 
+            feat_idx_str = re.findall(r'_feat_(.*)', k)[-1]
+            feat_idx = int(feat_idx_str)
+            key_tuple_list.append((feat_idx, k))
+    sorted_key_tuple_list = sorted(key_tuple_list, key=lambda x : x[0])
+    keys = [item[1] for item in sorted_key_tuple_list]
+    
+    #print ('keys', keys)
+    
     features = [batch.__dict__[k] for k in keys]
     levels = [data] + features
+
+    #print ('features', len(features))
+    #print ('levels', len(levels))
 
     if data_type == 'text':
         return torch.cat([level.unsqueeze(2) for level in levels], 2)
@@ -215,12 +233,15 @@ def get_adj(batch):
 
             arc_0 = label_voc[label_index[d, a]]
 
-            if arc_0 == '<unk>' or arc_0 == '<pad>':
+            arc_1_raw = node1_voc[arc]
+            arc_2_raw = node2_voc[node2_index[d, a]]
+            
+            if arc_0 == '<unk>' or arc_0 == '<pad>' or type(arc_1_raw)!=int or type(arc_2_raw)!=int:
                 pass
             else:
-
-                arc_1 = int(node1_voc[arc])
-                arc_2 = int(node2_voc[node2_index[d, a]])
+                
+                arc_1 = int(arc_1_raw)
+                arc_2 = int(arc_2_raw)
 
                 if arc_1 in tmp_in:
                     tmp_in[arc_1] += 1

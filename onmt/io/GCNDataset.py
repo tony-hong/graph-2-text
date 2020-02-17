@@ -68,6 +68,10 @@ class GCNDataset(ONMTDatasetBase):
                              zip(src_examples_iter, label_examples_iter, node1_examples_iter,
                                  node2_examples_iter))
 
+
+        #print ('examples_iter', examples_iter)
+        #print ('examples_iter.n_feats', examples_iter.n_feats)
+        
         if dynamic_dict:
             examples_iter = self._dynamic_dict(examples_iter)
 
