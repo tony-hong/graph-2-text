@@ -1,6 +1,16 @@
-# 
-*.out
 
+*.DS_Store
+
+*.swp
+*.out
+*.dat
+*.txt
+*.pt
+*.tgz
+
+code_backup/
+file_backup/
+save/
 corpus/
 processed_corpus/
 data/
