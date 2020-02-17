@@ -6,11 +6,10 @@ from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence as pack
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 
-class GCNLayer(nn.Module):
+class FTGCNLayer(nn.Module):
     """ Marcheggiani and Titov style Graph convolutional neural network encoder.
     
-        see 
-        https://www.aclweb.org/anthology/D17-1159
+        see https://www.aclweb.org/anthology/D17-1159
 
     """
     def __init__(self,
@@ -20,10 +19,13 @@ class GCNLayer(nn.Module):
                  out_arcs=True,
                  batch_first=False,
                  use_gates=True,
-                 use_glus=False,
-                dropout=0.3):
-        super(GCNLayer, self).__init__()
-
+                 use_glus=False):
+        super(FTGCNLayer, self).__init__()
+        
+        print ('num_inputs: ', num_inputs)
+        print ('num_units', num_units)
+        #assert num_inputs == num_units
+        
         self.in_arcs = in_arcs
         self.out_arcs = out_arcs
 
@@ -39,14 +41,20 @@ class GCNLayer(nn.Module):
         self.use_glus = use_glus
         #https://www.cs.toronto.edu/~yujiali/files/talks/iclr16_ggnn_talk.pdf
         #https://arxiv.org/pdf/1612.08083.pdf
-
+        
+        self.W_in = Parameter(torch.Tensor(self.num_inputs, self.num_units))
+        nn.init.xavier_normal(self.W_in)
+        self.W_out = Parameter(torch.Tensor(self.num_units, self.num_units))
+        nn.init.xavier_normal(self.W_out)
+        
         if in_arcs:
-            self.V_in = Parameter(torch.Tensor(self.num_inputs, self.num_units))
+            self.V_in = Parameter(torch.Tensor(self.num_units, 1))
             nn.init.xavier_normal(self.V_in)
 
             self.b_in = Parameter(torch.Tensor(num_labels, self.num_units))
-            nn.init.constant(self.b_in, 0)
-
+            nn.init.xavier_normal(self.b_in)
+            #nn.init.constant(self.b_in, 0)
+            
             if self.use_gates:
                 self.V_in_gate = Parameter(torch.Tensor(self.num_inputs, 1))
                 nn.init.xavier_normal(self.V_in_gate)
@@ -54,11 +62,12 @@ class GCNLayer(nn.Module):
                 nn.init.constant(self.b_in_gate, 1)
 
         if out_arcs:
-            self.V_out = Parameter(torch.Tensor(self.num_inputs, self.num_units))
+            self.V_out = Parameter(torch.Tensor(self.num_units, 1))
             nn.init.xavier_normal(self.V_out)
 
             self.b_out = Parameter(torch.Tensor(num_labels, self.num_units))
-            nn.init.constant(self.b_out, 0)
+            nn.init.xavier_normal(self.b_out)
+            #nn.init.constant(self.b_out, 0)
 
             if self.use_gates:
                 self.V_out_gate = Parameter(torch.Tensor(self.num_inputs, 1))
@@ -66,19 +75,12 @@ class GCNLayer(nn.Module):
                 self.b_out_gate = Parameter(torch.Tensor(num_labels, 1))
                 nn.init.constant(self.b_out_gate, 1)
 
-        self.W_self_loop = Parameter(torch.Tensor(self.num_inputs, self.num_units))
-
-        nn.init.xavier_normal(self.W_self_loop)
-
+        self.W_self_loop = self.W_in
+        
         if self.use_gates:
             self.W_self_loop_gate = Parameter(torch.Tensor(self.num_inputs, 1))
             nn.init.xavier_normal(self.W_self_loop_gate)
 
-        # add dropout for GCN
-        #self.dropout = nn.Dropout(p=dropout)
-            
-            
-            
     def forward(self, src, lengths=None, arc_tensor_in=None, arc_tensor_out=None,
                 label_tensor_in=None, label_tensor_out=None,
                 mask_in=None, mask_out=None,  # batch* t, degree
@@ -92,15 +94,21 @@ class GCNLayer(nn.Module):
         seq_len = encoder_outputs.size()[1]
         max_degree = 1
         input_ = encoder_outputs.view((batch_size * seq_len, self.num_inputs))  # [b* t, h]
+        input_ = torch.mm(input_, self.W_in)  # [b* t, h] * [h,h] = [b*t, h]
 
         if self.in_arcs:
-            input_in = torch.mm(input_, self.V_in)  # [b* t, h] * [h,h] = [b*t, h]
+            direction_in = torch.diag(self.V_in.view(self.num_units))
+            input_in = torch.mm(input_, direction_in)  # [b* t, h] * [h,h] = [b*t, h]
             first_in = input_in.index_select(0, arc_tensor_in[0] * seq_len + arc_tensor_in[1])  # [b* t* degr, h]
             second_in = self.b_in.index_select(0, label_tensor_in[0])  # [b* t* degr, h]
-            in_ = first_in + second_in
+            
             degr = int(first_in.size()[0] / batch_size / seq_len)
-
+            
+            in_ = first_in * second_in
+            in_ = torch.mm(in_, self.W_out)
             in_ = in_.view((batch_size, seq_len, degr, self.num_units))
+            
+            max_degree += degr
 
             if self.use_glus:
                 # gate the information of each neighbour, self nodes are in here too.
@@ -109,23 +117,24 @@ class GCNLayer(nn.Module):
 
             if self.use_gates:
                 # compute gate weights
-                input_in_gate = torch.mm(input_, self.V_in_gate)  # [b* t, h] * [h,h] = [b*t, h]
+                input_in_gate = torch.mm(input_, self.V_in_gate)  # [b* t, h] * [h, 1] = [b*t, 1]
                 first_in_gate = input_in_gate.index_select(0, arc_tensor_in[0] * seq_len + arc_tensor_in[1])  # [b* t* mxdeg, h]
                 second_in_gate = self.b_in_gate.index_select(0, label_tensor_in[0])
                 in_gate = (first_in_gate + second_in_gate).view((batch_size, seq_len, degr))
-
-            max_degree += degr
-
+            
         if self.out_arcs:
+            direction_out = torch.diag(self.V_out.view(self.num_units))
             input_out = torch.mm(input_, self.V_out)  # [b* t, h] * [h,h] = [b* t, h]
             first_out = input_out.index_select(0, arc_tensor_out[0] * seq_len + arc_tensor_out[1])  # [b* t* mxdeg, h]
             second_out = self.b_out.index_select(0, label_tensor_out[0])
-
+            
             degr = int(first_out.size()[0] / batch_size / seq_len)
+            
+            out_ = first_out * second_out
+            out_ = torch.mm(out_, self.W_out)
+            out_ = out_.view((batch_size, seq_len, degr, self.num_units))
+            
             max_degree += degr
-
-            out_ = (first_out + second_out).view((batch_size, seq_len, degr, self.num_units))
-
 
             if self.use_glus:
                 # gate the information of each neighbour, self nodes are in here too.
@@ -140,8 +149,9 @@ class GCNLayer(nn.Module):
                 out_gate = (first_out_gate + second_out_gate).view((batch_size, seq_len, degr))
 
 
-        same_input = torch.mm(encoder_outputs.view(-1, encoder_outputs.size(2)), self.W_self_loop). \
-            view(encoder_outputs.size(0), encoder_outputs.size(1), -1)
+        same_input = torch.mm(encoder_outputs.view(-1, encoder_outputs.size(2)), self.W_self_loop)
+        
+        same_input = same_input.view(encoder_outputs.size(0), encoder_outputs.size(1), -1)
         same_input = same_input.view(encoder_outputs.size(0), encoder_outputs.size(1), 1, self.W_self_loop.size(1))
         if self.use_gates:
             same_input_gate = torch.mm(encoder_outputs.view(-1, encoder_outputs.size(2)), self.W_self_loop_gate) \
@@ -193,7 +203,4 @@ class GCNLayer(nn.Module):
 
         memory_bank = result_.permute(1, 0, 2).contiguous()  # [t, b, h]
 
-        # add dropout for GCN
-        #memory_bank = self.dropout(memory_bank)
-        
         return memory_bank

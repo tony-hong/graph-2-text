@@ -7,10 +7,7 @@ from torch.nn.utils.rnn import pack_padded_sequence as pack
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 
 class GCNLayer(nn.Module):
-    """ Marcheggiani and Titov style Graph convolutional neural network encoder.
-    
-        see 
-        https://www.aclweb.org/anthology/D17-1159
+    """ Graph convolutional neural network encoder.
 
     """
     def __init__(self,
@@ -20,8 +17,7 @@ class GCNLayer(nn.Module):
                  out_arcs=True,
                  batch_first=False,
                  use_gates=True,
-                 use_glus=False,
-                dropout=0.3):
+                 use_glus=False):
         super(GCNLayer, self).__init__()
 
         self.in_arcs = in_arcs
@@ -74,11 +70,6 @@ class GCNLayer(nn.Module):
             self.W_self_loop_gate = Parameter(torch.Tensor(self.num_inputs, 1))
             nn.init.xavier_normal(self.W_self_loop_gate)
 
-        # add dropout for GCN
-        #self.dropout = nn.Dropout(p=dropout)
-            
-            
-            
     def forward(self, src, lengths=None, arc_tensor_in=None, arc_tensor_out=None,
                 label_tensor_in=None, label_tensor_out=None,
                 mask_in=None, mask_out=None,  # batch* t, degree
@@ -193,7 +184,4 @@ class GCNLayer(nn.Module):
 
         memory_bank = result_.permute(1, 0, 2).contiguous()  # [t, b, h]
 
-        # add dropout for GCN
-        #memory_bank = self.dropout(memory_bank)
-        
         return memory_bank
