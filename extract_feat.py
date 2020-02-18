@@ -9,6 +9,9 @@ import sys
 import random
 from datetime import datetime
 
+import dill as pkl
+import h5py
+import numpy as np
 import torch
 import torch.nn as nn
 from torch import cuda
@@ -227,7 +230,7 @@ def make_loss_compute(model, tgt_vocab, opt, train=True):
     return compute
 
 
-def eval_model(model, fields, optim, data_type, model_opt): 
+def eval_model(model, fields, optim, data_type, model_opt, split): 
     train_loss = make_loss_compute(model, fields["tgt"].vocab, opt)
     valid_loss = make_loss_compute(model, fields["tgt"].vocab, opt,
                                    train=False)
@@ -254,13 +257,14 @@ def eval_model(model, fields, optim, data_type, model_opt):
     '''
     
     print('Extract features for all split')
-    all_iter = make_dataset_iter(lazily_load_dataset("valid"),
+    all_iter = make_dataset_iter(lazily_load_dataset(split),
                                    fields, opt,
                                    is_train=False)
-    all_feats = trainer.extract_feat(all_iter)
-    num_hidden = all_feats.shape[-1]
-
-    return np.array(all_feats).reshape(-1, num_hidden)
+    feats_dict, feats_list = trainer.extract_feat(all_iter)
+    num_hidden = feats_list[0].shape[-1]
+    feat_array = np.array(feats_list).reshape(-1, num_hidden)
+    
+    return feats_dict, feat_array
     #TODO: can run the translate here
     
     
@@ -417,10 +421,14 @@ def main():
     # Build optimizer.
     optim = build_optim(model, checkpoint)
 
-    result = eval_model(model, fields, optim, data_type, model_opt)
+    split = 'all'
+    feats_dict, feats_array = eval_model(model, fields, optim, data_type, model_opt, split)
     
-    with open('extracted_feats.npy', 'w') as f:
-        np.save(result, f)
+    save_path = 'save/graph_emb/'
+    with open(os.path.join(save_path, 'feats_dict_'+split+'.pkl'), 'wb') as f:
+        pkl.dump(feats_dict, f)
+        
+    np.save(os.path.join(save_path, 'extracted_feats_'+split), feats_array)
 
     # If using tensorboard for logging, close the writer after training.
     if opt.tensorboard:

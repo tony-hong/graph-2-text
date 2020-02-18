@@ -12,8 +12,10 @@ users of this library) for the strategy things we do.
 import time
 import sys
 import math
+
 import torch
 import torch.nn as nn
+from tqdm import tqdm
 
 import onmt
 import onmt.io
@@ -209,7 +211,7 @@ class Trainer(object):
 
         stats = Statistics()
 
-        for batch in valid_iter:
+        for batch in tqdm(valid_iter):
             cur_dataset = valid_iter.get_cur_dataset()
             self.valid_loss.cur_dataset = cur_dataset
 
@@ -252,12 +254,91 @@ class Trainer(object):
 
             # Update statistics.
             stats.update(batch_stats)
-
+            
+            # 2 * 32 * 200
+            print('type(dec_state.hidden[0].data.cpu().numpy())', type(dec_state.hidden[0].data.cpu().numpy()))
+            print('dec_state.hidden[0].data.cpu().numpy().shape', dec_state.hidden[0].data.cpu().numpy().shape)
+            print('dec_state.hidden[0].shape', dec_state.hidden[0].shape)
+            print('dec_state.hidden[0].size(0)', dec_state.hidden[0].size(0))
+            print('dec_state.hidden[0].size(1)', dec_state.hidden[0].size(1))
+            
         # Set model back to training mode.
         self.model.train()
 
         return stats
+    
+    
+    def extract_feat(self, valid_iter):
+        """ extract features from model
+            valid_iter: validate data iterator
+        Returns:
+            :obj:`onmt.Statistics`: validation loss statistics
+        """
+        # Set model in validating mode.
+        self.model.eval()
 
+        dec_state_dict = {}
+        dec_state_list = []
+        for i, batch in enumerate(tqdm(valid_iter)):
+            cur_dataset = valid_iter.get_cur_dataset()
+            self.valid_loss.cur_dataset = cur_dataset
+
+            src = onmt.io.make_features(batch, 'src', self.data_type)
+            if self.data_type == 'text':
+                batch_src_data, src_lengths = batch.src
+            elif self.data_type == 'gcn':
+                batch_src_data, src_lengths = batch.src
+                # report_stats.n_src_words += src_lengths.sum()
+                adj_arc_in, adj_arc_out, adj_lab_in, adj_lab_out, \
+                mask_in, mask_out, mask_loop, mask_sent = onmt.io.get_adj(batch)
+                if hasattr(batch, 'morph'):
+                    morph, mask_morph = onmt.io.get_morph(batch)  # [b,t, max_morph]
+            else:
+                src_lengths = None
+
+            #print(batch.dataset.fields.keys())
+            node_vocab = batch.dataset.fields['src'].vocab.itos
+            # print('batch_src_data', batch_src_data.data.cpu().numpy()[0,0])
+            imageIdx = batch_src_data.data.cpu().numpy()[0,0]
+            imageID = node_vocab[imageIdx]
+            
+            tgt = onmt.io.make_features(batch, 'tgt')
+
+            # F-prop through the model.
+            if self.data_type == 'gcn':
+
+                if hasattr(batch, 'morph'):
+                    outputs, attns, dec_state = self.model(src, tgt, src_lengths,
+                               adj_arc_in, adj_arc_out, adj_lab_in,
+                               adj_lab_out, mask_in, mask_out,
+                               mask_loop, mask_sent, morph, mask_morph)
+                else:
+                    outputs, attns, dec_state = \
+                        self.model(src, tgt, src_lengths,
+                                   adj_arc_in, adj_arc_out, adj_lab_in,
+                                   adj_lab_out, mask_in, mask_out,
+                                   mask_loop, mask_sent)
+            else:
+                outputs, attns, _ = self.model(src, tgt, src_lengths)
+            
+            vec = dec_state.hidden[0].data.cpu().numpy()[0,:,:]
+            
+            dec_state_dict[imageID] = vec
+            dec_state_list.append(vec)
+            
+            # 2 * 32 * 200
+            '''
+            print('dec_state.hidden[0].shape', dec_state.hidden[0].shape)
+            print('dec_state.hidden[0].size(0)', dec_state.hidden[0].size(0))
+            print('dec_state.hidden[0].size(1)', dec_state.hidden[0].size(1))
+            '''
+            
+        # Set model back to training mode.
+        self.model.train()
+
+        return dec_state_dict, dec_state_list
+    
+    
     def epoch_step(self, ppl, epoch):
         return self.optim.update_learning_rate(ppl, epoch)
 
