@@ -94,10 +94,15 @@ class Embeddings(nn.Module):
                  feat_padding_idx=[],
                  feat_vocab_sizes=[],
                  dropout=0,
-                 sparse=False):
+                 sparse=False, 
+                output_size=None, 
+                for_encoder=True, 
+                on_cpu=False):
 
         self.word_padding_idx = word_padding_idx
-
+        self.for_encoder = for_encoder
+        self.on_cpu = on_cpu
+        
         # Dimensions and padding for constructing the word embedding matrix
         vocab_sizes = [word_vocab_size]
         emb_dims = [word_vec_size]
@@ -119,8 +124,19 @@ class Embeddings(nn.Module):
         # The embedding matrix look-up tables. The first look-up table
         # is for words. Subsequent ones are for features, if any exist.
         emb_params = zip(vocab_sizes, emb_dims, pad_indices)
-        embeddings = [nn.Embedding(vocab, dim, padding_idx=pad, sparse=sparse)
-                      for vocab, dim, pad in emb_params]
+        
+        if on_cpu:
+            embeddings = [nn.Embedding(vocab, dim, padding_idx=pad, sparse=sparse).cpu() for vocab, dim, pad in emb_params]
+        else:
+            embeddings = [nn.Embedding(vocab, dim, padding_idx=pad, sparse=sparse) for vocab, dim, pad in emb_params]
+        
+        '''
+        if for_encoder:
+            embeddings = [nn.Embedding(vocab, dim, padding_idx=pad, sparse=sparse).cpu() for vocab, dim, pad in emb_params] 
+        else: 
+            embeddings = [nn.Embedding(vocab, dim, padding_idx=pad, sparse=sparse).cuda() for vocab, dim, pad in emb_params]
+        '''
+        
         emb_luts = Elementwise(feat_merge, embeddings)
 
         # The final output size of word + feature vectors. This can vary
@@ -129,7 +145,13 @@ class Embeddings(nn.Module):
         # how big your embeddings are going to be.
         self.embedding_size = (sum(emb_dims) if feat_merge == 'concat'
                                else word_vec_size)
-
+        if output_size:
+            self.output_size = output_size
+        
+        print ('Embeddings: feat_merge', feat_merge)
+        print ('Embeddings: self.embedding_size', self.embedding_size)
+        print ('Embeddings: self.output_size', self.output_size)
+        
         # The sequence of operations that converts the input sequence
         # into a sequence of embeddings. At minimum this consists of
         # looking up the embeddings for each word and feature in the
@@ -138,7 +160,7 @@ class Embeddings(nn.Module):
         super(Embeddings, self).__init__()
         self.make_embedding = nn.Sequential()
         self.make_embedding.add_module('emb_luts', emb_luts)
-
+        
         if feat_merge == 'mlp' and len(feat_vocab_sizes) > 0:
             in_dim = sum(emb_dims)
             out_dim = word_vec_size
@@ -149,6 +171,17 @@ class Embeddings(nn.Module):
             pe = PositionalEncoding(dropout, self.embedding_size)
             self.make_embedding.add_module('pe', pe)
 
+        # add dropout for embeddings
+        if dropout != 0:
+            # add dropout for embedding
+            dropout = nn.Dropout(p=0.5)
+            self.make_embedding.add_module('dropout', dropout)
+        
+        # projection to output size
+        if output_size:
+            self.projection = nn.Sequential(nn.Linear(word_vec_size, output_size), nn.ReLU())
+            #self.make_embedding.add_module('projection', self.projection)
+        
     @property
     def word_lut(self):
         return self.make_embedding[0][0]
@@ -181,12 +214,35 @@ class Embeddings(nn.Module):
         """
         in_length, in_batch, nfeat = input.size()
         aeq(nfeat, len(self.emb_luts))
-
+        
         emb = self.make_embedding(input)
-
+        emb = self.projection(emb)
+        
+#         if self.for_encoder:
+#             print ('self.for_encoder', self.for_encoder)
+#             print ('Embeddings: input.is_cuda', input.is_cuda)
+#             input = input.cpu()
+#             print ('Embeddings: input.is_cuda', input.is_cuda)
+#             emb = self.make_embedding(input)
+#             print ('Embeddings: emb.is_cuda', emb.is_cuda)
+#             input = input.cuda()
+            
+#             emb = emb.cuda()
+#             print ('Embeddings: emb.is_cuda', emb.is_cuda)
+#             emb = self.projection(emb)
+        
+#         else:
+#             print ('self.for_encoder', self.for_encoder)
+#             emb = self.make_embedding(input)
+#             emb = self.projection(emb)
+            
         out_length, out_batch, emb_size = emb.size()
         aeq(in_length, out_length)
         aeq(in_batch, out_batch)
-        aeq(emb_size, self.embedding_size)
+        
+        if not self.output_size:
+            aeq(emb_size, self.embedding_size)
+        else:
+            aeq(emb_size, self.output_size)
 
         return emb

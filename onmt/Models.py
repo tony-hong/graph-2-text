@@ -9,6 +9,8 @@ from torch.nn.utils.rnn import pad_packed_sequence as unpack
 import onmt
 from onmt.Utils import aeq
 from onmt.my_modules.GCN import GCNLayer
+from onmt.my_modules.RGCN import RGCNLayer
+from onmt.my_modules.FTGCN import FTGCNLayer
 
 def rnn_factory(rnn_type, **kwargs):
     # Use pytorch version when available.
@@ -190,7 +192,7 @@ class RNNEncoder(EncoderBase):
 
 
 class GCNEncoder(EncoderBase):
-    """ A generic recurrent neural network encoder.
+    """ A generic GCN encoder.
 
     Args:
        rnn_type (:obj:`str`):
@@ -211,7 +213,10 @@ class GCNEncoder(EncoderBase):
                  residual='',
                  use_gates=True,
                  use_glus=False,
-                 morph_embeddings=None):
+                 gcn_type='GCN',
+                 morph_embeddings=None,
+                dropout=0.5,
+                use_gpu=True):
         super(GCNEncoder, self).__init__()
         self.embeddings = embeddings
         self.num_layers = num_layers
@@ -220,26 +225,45 @@ class GCNEncoder(EncoderBase):
         self.residual = residual
         self.use_gates = use_gates
         self.use_glus = use_glus
-
-
+        self.use_gpu = use_gpu
+        
+        self.embs_on_cpu = embeddings.on_cpu
+        
+        if gcn_type == 'GCN': 
+            Layer = GCNLayer
+        elif gcn_type == 'RGCN': 
+            Layer = RGCNLayer
+        elif gcn_type == 'FTGCN': 
+            Layer = FTGCNLayer
+        else:
+            print ('Unknown model. Fall back to GCN. ')
+            Layer = GCNLayer
+            
         if morph_embeddings is not None:
             self.morph_embeddings = morph_embeddings
             self.emb_morph_emb = nn.Linear(num_inputs+morph_embeddings.embedding_size, num_inputs)
-
-        self.H_1 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units))
+        
+        if use_gpu: 
+            self.H_1 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units).cuda())
+            self.H_2 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units).cuda())
+            self.H_3 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units).cuda())
+            self.H_4 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units).cuda())
+        else:
+            self.H_1 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units))
+            self.H_2 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units))
+            self.H_3 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units))
+            self.H_4 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units))
+            
         nn.init.xavier_normal(self.H_1)
-        self.H_2 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units))
-        nn.init.xavier_normal(self.H_2)
-        self.H_3 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units))
+        nn.init.xavier_normal(self.H_2)        
         nn.init.xavier_normal(self.H_3)
-        self.H_4 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units))
         nn.init.xavier_normal(self.H_4)
-
+        
         self.gcn_layers = []
         if residual == '' or residual == 'residual':
 
             for i in range(self.num_layers):
-                gcn = GCNLayer(num_inputs, num_units, num_labels,
+                gcn = Layer(num_inputs, num_units, num_labels,
                                in_arcs=in_arcs, out_arcs=out_arcs, use_gates=self.use_gates,
                                use_glus=self.use_glus)
                 self.gcn_layers.append(gcn)
@@ -249,27 +273,30 @@ class GCNEncoder(EncoderBase):
         elif residual == 'dense':
             for i in range(self.num_layers):
                 input_size = num_inputs + (i * num_units)
-                gcn = GCNLayer(input_size, num_units, num_labels,
+                gcn = Layer(input_size, num_units, num_labels,
                                in_arcs=in_arcs, out_arcs=out_arcs, use_gates=self.use_gates,
                                use_glus=self.use_glus)
                 self.gcn_layers.append(gcn)
 
             self.gcn_seq = nn.Sequential(*self.gcn_layers)
 
-
-
-
+        # add dropout for GCN
+        self.dropout = nn.Dropout(p=dropout)
 
 
     def forward(self, src, lengths=None, arc_tensor_in=None, arc_tensor_out=None,
                 label_tensor_in=None, label_tensor_out=None,
                 mask_in=None, mask_out=None,  # batch* t, degree
                 mask_loop=None, sent_mask=None, morph=None, morph_mask=None):
+        
+        if self.embs_on_cpu:
+            src = src.cpu()
+        
+        embeddings = self.embeddings(src)  # [t,b,e]
+        
         if morph is None:
-
-            embeddings = self.embeddings(src)
+            pass
         else:
-            embeddings = self.embeddings(src)  # [t,b,e]
             morph_size = morph.data.size()  # [B,t,max_m]
             embeddings_m = self.morph_embeddings(morph.view(morph_size[0] * morph_size[1],
                                                             morph_size[2], 1))  # [B*t,max_m, m_e]
@@ -284,7 +311,9 @@ class GCNEncoder(EncoderBase):
 
             embeddings = torch.nn.functional.relu(self.emb_morph_emb(embeddings))
 
-
+        if self.embs_on_cpu:
+            src = src.cuda()
+            embeddings = embeddings.cuda()
 
         if self.residual == '':
 
@@ -362,6 +391,10 @@ class GCNEncoder(EncoderBase):
         h__1 = torch.cat([h_1, h_2], dim=0)  # [2, b, h]
         h__2 = torch.cat([h_3, h_4], dim=0)  # [2, b, h]
 
+        # add dropout here
+        h__1 = self.dropout(h__1)
+        h__2 = self.dropout(h__2)
+        
         return (h__1, h__2), memory_bank
 
 
@@ -812,7 +845,7 @@ class NMTModelGCN(nn.Module):
                  * dictionary attention dists of `[tgt_len x batch x src_len]`
                  * final decoder state
         """
-        tgt = tgt[:-1]  # exclude last target from inputs
+        tgt = tgt[:-1]  # exclude last target from inputs. TH: #edge == #node - 1
 
         enc_final, memory_bank = self.encoder(src, lengths, adj_arc_in, adj_arc_out,
                                               adj_lab_in, adj_lab_out,
@@ -826,6 +859,7 @@ class NMTModelGCN(nn.Module):
                          memory_lengths=lengths)
         if self.multigpu:
             # Not yet supported on multi-gpu
+            print ("Not yet supported on multi-gpu!!!")
             dec_state = None
             attns = None
         return decoder_outputs, attns, dec_state

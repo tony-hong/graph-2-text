@@ -40,7 +40,10 @@ def make_embeddings(opt, word_dict, feature_dicts, for_encoder=True):
     num_feat_embeddings = [len(feat_dict) for feat_dict in
                            feature_dicts]
 
-    return Embeddings(word_vec_size=embedding_dim,
+    # a hack to add output size and make it equal to the input size of GCN encoder
+    output_size = opt.gcn_num_inputs
+    
+    emb = Embeddings(word_vec_size=embedding_dim,
                       position_encoding=opt.position_encoding,
                       feat_merge=opt.feat_merge,
                       feat_vec_exponent=opt.feat_vec_exponent,
@@ -50,7 +53,12 @@ def make_embeddings(opt, word_dict, feature_dicts, for_encoder=True):
                       feat_padding_idx=feats_padding_idx,
                       word_vocab_size=num_word_embeddings,
                       feat_vocab_sizes=num_feat_embeddings,
-                      sparse=opt.optim == "sparseadam")
+                      sparse=opt.optim == "sparseadam", 
+                     output_size=output_size, 
+                     for_encoder=for_encoder, 
+                    on_cpu=opt.embs_on_cpu)
+    
+    return emb
 
 
 
@@ -117,7 +125,9 @@ def make_encoder(opt, embeddings, morph_embeddings=None):
                           opt.gcn_residual,
                           opt.gcn_use_gates,
                           opt.gcn_use_glus,
-                          morph_embeddings)
+                          opt.gcn_type, 
+                          morph_embeddings,
+                         use_gpu(opt))
     else:
         # "rnn" or "brnn"
         return RNNEncoder(opt.rnn_type, opt.brnn, opt.enc_layers,
@@ -201,6 +211,9 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
         feature_dicts = onmt.io.collect_feature_vocabs(fields, 'src')
         src_embeddings = make_embeddings(model_opt, src_dict,
                                          feature_dicts)
+
+        print('feature_dicts', len(feature_dicts))
+        
         if 'morph' in fields:
             if hasattr(fields["morph"], 'vocab'):
                 morph_dict = fields["morph"].vocab
@@ -290,7 +303,13 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
 
     # Make the whole model leverage GPU if indicated to do so.
     if gpu:
-        model.cuda()
+#         model.cuda()
+#         model.encoder.cuda()
+        model.encoder.embeddings.cpu()
+        model.encoder.gcn_seq.cuda()
+
+        model.decoder.cuda()
+        model.generator.cuda()
     else:
         model.cpu()
 
