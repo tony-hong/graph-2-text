@@ -129,7 +129,18 @@ def preprocess_opts(parser):
     group.add_argument('-data_type', default="text",
                        help="""Type of the source input.
                        Options are [text|img].""")
-
+    
+    group.add_argument('-all_src', required=True,
+                       help="Path to the all source data")
+    group.add_argument('-all_label', required=False,
+                       help="Path to the all source data")
+    group.add_argument('-all_node1', required=False,
+                       help="Path to the all source data")
+    group.add_argument('-all_node2', required=False,
+                       help="Path to the all source data")
+    group.add_argument('-all_tgt', required=True,
+                       help="Path to the all target data")
+    
     group.add_argument('-train_src', required=True,
                        help="Path to the training source data")
     group.add_argument('-train_label', required=False,
@@ -250,7 +261,9 @@ def gcn_opts(parser):
                        help='Switch to activate edgewise gates')
     group.add_argument('-gcn_use_glus', action="store_true",
                        help='Node gates.')
-
+    group.add_argument('-gcn_type', default='GCN',
+                       choices=['GCN', 'RGCN', 'FTGCN', 'GAT', 'SurfGCN'],
+                       help='choose different types of GCN.')
 
 def train_opts(parser):
     # Model loading/saving options
@@ -329,6 +342,9 @@ def train_opts(parser):
                         uses more memory.""")
     group.add_argument('-epochs', type=int, default=13,
                        help='Number of training epochs')
+    group.add_argument('-early_stopping', action="store_true",
+                   help='Early stop when train acc > valid acc.')
+    
     group.add_argument('-optim', default='sgd',
                        choices=['sgd', 'adagrad', 'adadelta', 'adam',
                                 'sparseadam'],
@@ -405,7 +421,7 @@ def train_opts(parser):
                        help="""Use tensorboardX for visualization during training.
                        Must have the library tensorboardX.""")
     group.add_argument("-tensorboard_log_dir", type=str,
-                       default="runs/onmt",
+                       default="save/tensorboardX/en_noFeat_RGCN",
                        help="""Log directory for Tensorboard.
                        This is also the name of the run.
                        """)
@@ -484,6 +500,15 @@ def translate_opts(parser):
                         (higher = longer generation)""")
     group.add_argument('-beta', type=float, default=-0.,
                        help="""Coverage penalty parameter""")
+    
+    group.add_argument('--block_ngram_repeat', '-block_ngram_repeat',
+              type=int, default=1,
+              help='Block repetition of ngrams during decoding.')
+    group.add_argument('--ignore_when_blocking', '-ignore_when_blocking',
+              nargs='+', type=str, default=[],
+              help="Ignore these strings when blocking repeats. "
+                   "You want to block sentence delimiters.")
+    
     group.add_argument('-replace_unk', action="store_true",
                        help="""Replace the generated UNK tokens with the
                        source token that had highest attention weight. If
