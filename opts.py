@@ -284,6 +284,9 @@ def train_opts(parser):
     group.add_argument('-seed', type=int, default=-1,
                        help="""Random seed used for the experiments
                        reproducibility.""")
+    group.add_argument('-embs_on_cpu', action='store_true',
+                   help="""Save embeddings on CPU. Useful for large embs which cannot fit into GPU memory""")
+    
 
     # Init options
     group = parser.add_argument_group('Initialization')
