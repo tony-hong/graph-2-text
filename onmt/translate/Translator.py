@@ -31,7 +31,9 @@ class Translator(object):
                  cuda=False,
                  beam_trace=False,
                  min_length=0,
-                 stepwise_penalty=False):
+                 stepwise_penalty=False,
+                block_ngram_repeat=0,
+                ignore_when_blocking=set([])):
         self.model = model
         self.fields = fields
         self.n_best = n_best
@@ -42,7 +44,10 @@ class Translator(object):
         self.cuda = cuda
         self.min_length = min_length
         self.stepwise_penalty = stepwise_penalty
-
+        
+        self.block_ngram_repeat = block_ngram_repeat
+        self.ignore_when_blocking = ignore_when_blocking
+        
         # for debugging
         self.beam_accum = None
         if beam_trace:
@@ -80,7 +85,8 @@ class Translator(object):
                                     eos=vocab.stoi[onmt.io.EOS_WORD],
                                     bos=vocab.stoi[onmt.io.BOS_WORD],
                                     min_length=self.min_length,
-                                    stepwise_penalty=self.stepwise_penalty)
+                                    stepwise_penalty=self.stepwise_penalty,
+                                   block_ngram_repeat=self.block_ngram_repeat)
                 for __ in range(batch_size)]
 
         # Help functions for working with beams and batches
@@ -133,6 +139,8 @@ class Translator(object):
                                                   .long()\
                                                   .fill_(memory_bank.size(0))
 
+        #         print ('###########self.copy_attn: ', self.copy_attn)
+        
         # (2) Repeat src objects `beam_size` times.
         src_map = rvar(batch.src_map.data) \
             if (data_type == 'text' or data_type == 'gcn') and self.copy_attn else None
@@ -140,8 +148,12 @@ class Translator(object):
         memory_lengths = src_lengths.repeat(beam_size)
         dec_states.repeat_beam_size_times(beam_size)
 
+        ###### a hack for task 1 to match length of sentences
+        print (max(src_lengths))
+        max_sent_length = max(src_lengths) + self.max_length
+        
         # (3) run the decoder to generate sentences, using beam search.
-        for i in range(self.max_length):
+        for i in range(max_sent_length):
             if all((b.done() for b in beam)):
                 break
 
@@ -192,8 +204,8 @@ class Translator(object):
         # (4) Extract sentences from beam.
         ret = self._from_beam(beam)
         ret["gold_score"] = [0] * batch_size
-        if "tgt" in batch.__dict__:
-            ret["gold_score"] = self._run_target(batch, data)
+        #if "tgt" in batch.__dict__:
+        #    ret["gold_score"] = self._run_target(batch, data)
         ret["batch"] = batch
         return ret
 
@@ -261,9 +273,13 @@ class Translator(object):
             tgt_in, memory_bank, dec_states, memory_lengths=src_lengths)
 
         tgt_pad = self.fields["tgt"].vocab.stoi[onmt.io.PAD_WORD]
+        
         for dec, tgt in zip(dec_out, batch.tgt[1:].data):
             # Log prob of each word.
-            out = self.model.generator.forward(dec)
+            if self.copy_attn:
+                out = self.model.generator.forward(dec)
+            else:
+                out = self.model.generator.forward(dec)
             tgt = tgt.unsqueeze(1)
             scores = out.data.gather(1, tgt)
             scores.masked_fill_(tgt.eq(tgt_pad), 0)
