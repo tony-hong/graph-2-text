@@ -18,7 +18,7 @@ from onmt.Utils import use_gpu
 from torch.nn.init import xavier_uniform
 
 
-def make_embeddings(opt, word_dict, feature_dicts, for_encoder=True):
+def make_embeddings(opt, word_dict, feature_dicts, output_size, for_encoder=True):
     """
     Make an Embeddings instance.
     Args:
@@ -39,9 +39,6 @@ def make_embeddings(opt, word_dict, feature_dicts, for_encoder=True):
                          for feat_dict in feature_dicts]
     num_feat_embeddings = [len(feat_dict) for feat_dict in
                            feature_dicts]
-
-    # a hack to add output size and make it equal to the input size of GCN encoder
-    output_size = opt.gcn_num_inputs
     
     emb = Embeddings(word_vec_size=embedding_dim,
                       position_encoding=opt.position_encoding,
@@ -209,8 +206,8 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
     if model_opt.model_type == "text":
         src_dict = fields["src"].vocab
         feature_dicts = onmt.io.collect_feature_vocabs(fields, 'src')
-        src_embeddings = make_embeddings(model_opt, src_dict,
-                                         feature_dicts)
+        # a hack to add output size and make it equal to the input size of GCN encoder
+        src_embeddings = make_embeddings(model_opt, src_dict, feature_dicts, opt.gcn_num_inputs)
 
         print('feature_dicts', len(feature_dicts))
         
@@ -240,7 +237,7 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
     tgt_dict = fields["tgt"].vocab
     feature_dicts = onmt.io.collect_feature_vocabs(fields, 'tgt')
     tgt_embeddings = make_embeddings(model_opt, tgt_dict,
-                                     feature_dicts, for_encoder=False)
+                                     feature_dicts, opt.rnn_size, for_encoder=False)
 
     # Share the embedding matrix - preprocess with share_vocab required.
     if model_opt.share_embeddings:
