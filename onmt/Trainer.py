@@ -161,7 +161,7 @@ class Trainer(object):
             # Dynamic batching
             num_batches = -1
 
-        for i, batch in enumerate(train_iter):
+        for batch in tqdm(train_iter):
             cur_dataset = train_iter.get_cur_dataset()
             self.train_loss.cur_dataset = cur_dataset
 
@@ -255,12 +255,14 @@ class Trainer(object):
             # Update statistics.
             stats.update(batch_stats)
             
+            '''
             # 2 * 32 * 200
             print('type(dec_state.hidden[0].data.cpu().numpy())', type(dec_state.hidden[0].data.cpu().numpy()))
             print('dec_state.hidden[0].data.cpu().numpy().shape', dec_state.hidden[0].data.cpu().numpy().shape)
             print('dec_state.hidden[0].shape', dec_state.hidden[0].shape)
             print('dec_state.hidden[0].size(0)', dec_state.hidden[0].size(0))
             print('dec_state.hidden[0].size(1)', dec_state.hidden[0].size(1))
+            '''
             
         # Set model back to training mode.
         self.model.train()

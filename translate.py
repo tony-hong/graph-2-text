@@ -115,8 +115,6 @@ def main():
         global_scorer=scorer,
         max_length=opt.max_length,
         copy_attn=model_opt.copy_attn,
-#         a hack here to enforce copy attn
-#         copy_attn=True,
         cuda=opt.cuda,
         beam_trace=opt.dump_beam != "",
         min_length=opt.min_length,
