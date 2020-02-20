@@ -216,7 +216,8 @@ class Embeddings(nn.Module):
         aeq(nfeat, len(self.emb_luts))
         
         emb = self.make_embedding(input)
-        emb = self.projection(emb)
+        if output_size:
+            emb = self.projection(emb)
         
 #         if self.for_encoder:
 #             print ('self.for_encoder', self.for_encoder)

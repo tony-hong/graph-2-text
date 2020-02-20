@@ -18,7 +18,7 @@ from onmt.Utils import use_gpu
 from torch.nn.init import xavier_uniform
 
 
-def make_embeddings(opt, word_dict, feature_dicts, output_size, for_encoder=True):
+def make_embeddings(opt, word_dict, feature_dicts, output_size=None, for_encoder=True):
     """
     Make an Embeddings instance.
     Args:
@@ -208,6 +208,7 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
         feature_dicts = onmt.io.collect_feature_vocabs(fields, 'src')
         # a hack to add output size and make it equal to the input size of GCN encoder
         src_embeddings = make_embeddings(model_opt, src_dict, feature_dicts, model_opt.gcn_num_inputs)
+        #src_embeddings = make_embeddings(model_opt, src_dict, feature_dicts)
 
         print('feature_dicts', len(feature_dicts))
         
@@ -236,8 +237,9 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
     # Make decoder.
     tgt_dict = fields["tgt"].vocab
     feature_dicts = onmt.io.collect_feature_vocabs(fields, 'tgt')
-    tgt_embeddings = make_embeddings(model_opt, tgt_dict,
-                                     feature_dicts, model_opt.rnn_size, for_encoder=False)
+    
+    tgt_embeddings = make_embeddings(model_opt, tgt_dict, feature_dicts, model_opt.rnn_size, for_encoder=False)
+    #tgt_embeddings = make_embeddings(model_opt, tgt_dict, feature_dicts, for_encoder=False)
 
     # Share the embedding matrix - preprocess with share_vocab required.
     if model_opt.share_embeddings:
