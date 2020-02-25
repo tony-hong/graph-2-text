@@ -95,7 +95,7 @@ class Embeddings(nn.Module):
                  feat_vocab_sizes=[],
                  dropout=0,
                  sparse=False, 
-                output_size=None, 
+                output_size=0, 
                 for_encoder=True, 
                 on_cpu=False):
 
@@ -145,12 +145,12 @@ class Embeddings(nn.Module):
         # how big your embeddings are going to be.
         self.embedding_size = (sum(emb_dims) if feat_merge == 'concat'
                                else word_vec_size)
-        if output_size:
-            self.output_size = output_size
+
+        self.output_size = output_size
         
         print ('Embeddings: feat_merge', feat_merge)
         print ('Embeddings: self.embedding_size', self.embedding_size)
-        print ('Embeddings: self.output_size', self.output_size)
+        #print ('Embeddings: self.output_size', self.output_size)
         
         # The sequence of operations that converts the input sequence
         # into a sequence of embeddings. At minimum this consists of
@@ -178,7 +178,7 @@ class Embeddings(nn.Module):
             self.make_embedding.add_module('dropout', dropout)
         
         # projection to output size
-        if output_size:
+        if output_size != 0:
             self.projection = nn.Sequential(nn.Linear(word_vec_size, output_size), nn.ReLU())
             #self.make_embedding.add_module('projection', self.projection)
         
@@ -216,7 +216,7 @@ class Embeddings(nn.Module):
         aeq(nfeat, len(self.emb_luts))
         
         emb = self.make_embedding(input)
-        if output_size:
+        if self.output_size != 0:
             emb = self.projection(emb)
         
 #         if self.for_encoder:
