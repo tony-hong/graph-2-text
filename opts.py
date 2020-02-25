@@ -31,8 +31,8 @@ def model_opts(parser):
                        help="""Use a sin to mark relative words positions.
                        Necessary for non-RNN style models.
                        """)
-    group.add_argument('-embs_projection', action='store_true',
-                   help="""Project embeddings to lower dimensions""")
+    #group.add_argument('-embs_projection', action='store_true',
+    #               help="""Project embeddings to lower dimensions""")
     
     
     group = parser.add_argument_group('Model-Embedding Features')

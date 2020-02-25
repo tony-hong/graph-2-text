@@ -18,7 +18,7 @@ from onmt.Utils import use_gpu
 from torch.nn.init import xavier_uniform
 
 
-def make_embeddings(opt, word_dict, feature_dicts, output_size=0, for_encoder=True):
+def make_embeddings(opt, word_dict, feature_dicts, for_encoder=True):
     """
     Make an Embeddings instance.
     Args:
@@ -27,11 +27,21 @@ def make_embeddings(opt, word_dict, feature_dicts, output_size=0, for_encoder=Tr
         feature_dicts([Vocab], optional): a list of feature dictionary.
         for_encoder(bool): make Embeddings for encoder or decoder?
     """
+    on_cpu = False
+    output_size=0
+    
+    # a hack to add output size and make it equal to the input size of next layer
     if for_encoder:
         embedding_dim = opt.src_word_vec_size
+        if opt.embs_on_cpu:
+            on_cpu = True
+        if opt.src_word_vec_size != opt.gcn_num_inputs:
+            output_size = opt.gcn_num_inputs
     else:
         embedding_dim = opt.tgt_word_vec_size
-
+        if opt.tgt_word_vec_size != opt.rnn_size:
+            output_size = opt.rnn_size
+            
     word_padding_idx = word_dict.stoi[onmt.io.PAD_WORD]
     num_word_embeddings = len(word_dict)
 
@@ -53,7 +63,7 @@ def make_embeddings(opt, word_dict, feature_dicts, output_size=0, for_encoder=Tr
                       sparse=opt.optim == "sparseadam", 
                      output_size=output_size, 
                      for_encoder=for_encoder, 
-                    on_cpu=opt.embs_on_cpu)
+                    on_cpu=on_cpu)
     
     return emb
 
@@ -114,6 +124,7 @@ def make_encoder(opt, embeddings, morph_embeddings=None):
         return GCNEncoder(embeddings,
                           opt.gcn_num_inputs,
                           opt.gcn_num_units,
+                          opt.rnn_size,
                           opt.gcn_num_labels,
                           opt.gcn_num_layers,
                           opt.gcn_in_arcs,
@@ -206,12 +217,8 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
     if model_opt.model_type == "text":
         src_dict = fields["src"].vocab
         feature_dicts = onmt.io.collect_feature_vocabs(fields, 'src')
-        # a hack to add output size and make it equal to the input size of GCN encoder
-        if model_opt.embs_projection:
-            src_embeddings = make_embeddings(model_opt, src_dict, feature_dicts, model_opt.gcn_num_inputs)
-        else:
-            src_embeddings = make_embeddings(model_opt, src_dict, feature_dicts)
-
+        src_embeddings = make_embeddings(model_opt, src_dict, feature_dicts)
+        
         print('feature_dicts', len(feature_dicts))
         
         if 'morph' in fields:
@@ -240,10 +247,7 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
     tgt_dict = fields["tgt"].vocab
     feature_dicts = onmt.io.collect_feature_vocabs(fields, 'tgt')
     
-    if model_opt.embs_projection:
-        tgt_embeddings = make_embeddings(model_opt, tgt_dict, feature_dicts, model_opt.rnn_size, for_encoder=False)
-    else:
-        tgt_embeddings = make_embeddings(model_opt, tgt_dict, feature_dicts, for_encoder=False)
+    tgt_embeddings = make_embeddings(model_opt, tgt_dict, feature_dicts, for_encoder=False)
 
     # Share the embedding matrix - preprocess with share_vocab required.
     if model_opt.share_embeddings:
