@@ -249,19 +249,22 @@ class GCNEncoder(EncoderBase):
             self.H_2 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs).cuda())
             self.H_3 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs).cuda())
             self.H_4 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs).cuda())
-            self.W_H = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs).cuda())
+            if self.num_units != self.num_outputs:
+                self.W_H = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs).cuda())
         else:
             self.H_1 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs))
             self.H_2 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs))
             self.H_3 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs))
             self.H_4 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs))
-            self.W_H = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs))
+            if self.num_units != self.num_outputs:
+                self.W_H = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs))
             
         nn.init.xavier_normal(self.H_1)
         nn.init.xavier_normal(self.H_2)        
         nn.init.xavier_normal(self.H_3)
         nn.init.xavier_normal(self.H_4)
-        nn.init.xavier_normal(self.W_H)
+        if self.num_units != self.num_outputs:
+            nn.init.xavier_normal(self.W_H)
         
         self.gcn_layers = []
         if residual == '' or residual == 'residual':
@@ -401,12 +404,10 @@ class GCNEncoder(EncoderBase):
         h__1 = self.dropout(h__1)
         h__2 = self.dropout(h__2)
         
-        #print(type(memory_bank))
-        #print(type(self.W_H))
-        
-        # project nodes 
-        memory_bank = memory_bank.view((target_len * batch_size, self.num_units))
-        memory_bank = torch.mm(memory_bank, self.W_H).view((target_len, batch_size, self.num_outputs))
+        if self.num_units != self.num_outputs:
+            # project nodes 
+            memory_bank = memory_bank.view((target_len * batch_size, self.num_units))
+            memory_bank = torch.mm(memory_bank, self.W_H).view((target_len, batch_size, self.num_outputs))
         
         return (h__1, h__2), memory_bank
 
