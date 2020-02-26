@@ -204,7 +204,7 @@ class GCNEncoder(EncoderBase):
        embeddings (:obj:`onmt.modules.Embeddings`): embedding module to use
     """
     def __init__(self, embeddings,
-                 num_inputs, num_units,
+                 num_inputs, num_units, num_outputs,
                  num_labels,
                  num_layers=1,
                  in_arcs=True,
@@ -222,6 +222,7 @@ class GCNEncoder(EncoderBase):
         self.num_layers = num_layers
         self.num_inputs = num_inputs
         self.num_units = num_units
+        self.num_outputs = num_outputs
         self.residual = residual
         self.use_gates = use_gates
         self.use_glus = use_glus
@@ -244,20 +245,23 @@ class GCNEncoder(EncoderBase):
             self.emb_morph_emb = nn.Linear(num_inputs+morph_embeddings.embedding_size, num_inputs)
         
         if use_gpu: 
-            self.H_1 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units).cuda())
-            self.H_2 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units).cuda())
-            self.H_3 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units).cuda())
-            self.H_4 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units).cuda())
+            self.H_1 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs).cuda())
+            self.H_2 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs).cuda())
+            self.H_3 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs).cuda())
+            self.H_4 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs).cuda())
+            self.W_H = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs).cuda())
         else:
-            self.H_1 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units))
-            self.H_2 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units))
-            self.H_3 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units))
-            self.H_4 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_units))
+            self.H_1 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs))
+            self.H_2 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs))
+            self.H_3 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs))
+            self.H_4 = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs))
+            self.W_H = torch.nn.parameter.Parameter(torch.Tensor(self.num_units, self.num_outputs))
             
         nn.init.xavier_normal(self.H_1)
         nn.init.xavier_normal(self.H_2)        
         nn.init.xavier_normal(self.H_3)
         nn.init.xavier_normal(self.H_4)
+        nn.init.xavier_normal(self.W_H)
         
         self.gcn_layers = []
         if residual == '' or residual == 'residual':
@@ -373,27 +377,36 @@ class GCNEncoder(EncoderBase):
                                                  label_tensor_in, label_tensor_out,
                                                  mask_in, mask_out,
                                                  mask_loop, sent_mask)  # [t, b, h]
-
-
-
+        
+        target_len = memory_bank.size()[0]
         batch_size = memory_bank.size()[1]
+
+        # mean pooling on nodes
         result_ = memory_bank.permute(2, 1, 0)  # [h,b,t]
         res_sum = result_.sum(2)  # [h,b]
+        
         sent_mask = sent_mask.permute(1, 0).contiguous()  # [b,t]
         mask_sum = sent_mask.sum(1)  # [b]
         encoder_final = res_sum / mask_sum  # [h, b]
         encoder_final = encoder_final.permute(1, 0)  # [b, h]
-
-        h_1 = torch.mm(encoder_final, self.H_1).view((1, batch_size, self.num_units))  # [1, b, h]
-        h_2 = torch.mm(encoder_final, self.H_2).view((1, batch_size, self.num_units))
-        h_3 = torch.mm(encoder_final, self.H_3).view((1, batch_size, self.num_units))
-        h_4 = torch.mm(encoder_final, self.H_4).view((1, batch_size, self.num_units))
+        
+        h_1 = torch.mm(encoder_final, self.H_1).view((1, batch_size, self.num_outputs))  # [1, b, h]
+        h_2 = torch.mm(encoder_final, self.H_2).view((1, batch_size, self.num_outputs))
+        h_3 = torch.mm(encoder_final, self.H_3).view((1, batch_size, self.num_outputs))
+        h_4 = torch.mm(encoder_final, self.H_4).view((1, batch_size, self.num_outputs))
         h__1 = torch.cat([h_1, h_2], dim=0)  # [2, b, h]
         h__2 = torch.cat([h_3, h_4], dim=0)  # [2, b, h]
 
         # add dropout here
         h__1 = self.dropout(h__1)
         h__2 = self.dropout(h__2)
+        
+        #print(type(memory_bank))
+        #print(type(self.W_H))
+        
+        # project nodes 
+        memory_bank = memory_bank.view((target_len * batch_size, self.num_units))
+        memory_bank = torch.mm(memory_bank, self.W_H).view((target_len, batch_size, self.num_outputs))
         
         return (h__1, h__2), memory_bank
 
@@ -593,7 +606,7 @@ class StdRNNDecoder(RNNDecoderBase):
         # Initialize local and return variables.
         attns = {}
         emb = self.embeddings(tgt)
-
+        
         # Run the forward pass of the RNN.
         if isinstance(self.rnn, nn.GRU):
             rnn_output, decoder_final = self.rnn(emb, state.hidden[0])
